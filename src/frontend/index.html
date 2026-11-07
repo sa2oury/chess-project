@@ -244,11 +244,12 @@
       highlightLastMove();
       removeHints();
 
-      // Transmit move to Python
+      // Transmit move to Python with unique timestamp
       sendValue({
         move: lastMove,
         san: moveObj.san,
-        fen: game.fen()
+        fen: game.fen(),
+        move_id: Date.now()
       });
 
       return true;

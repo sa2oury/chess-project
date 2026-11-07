@@ -19,17 +19,18 @@ def find_immediate_mate_in_1(board: chess.Board) -> chess.Move | None:
 def allows_opponent_mate_in_1(board: chess.Board, move: chess.Move) -> bool:
     """Checks whether playing `move` gives opponent an immediate mate-in-1."""
     board.push(move)
-    can_mate = False
-    for opp_m in board.legal_moves:
-        if board.gives_check(opp_m):
-            board.push(opp_m)
-            if board.is_checkmate():
-                can_mate = True
-                board.pop()
-                break
-            board.pop()
-    board.pop()
-    return can_mate
+    try:
+        for opp_m in board.legal_moves:
+            if board.gives_check(opp_m):
+                board.push(opp_m)
+                try:
+                    if board.is_checkmate():
+                        return True
+                finally:
+                    board.pop()
+        return False
+    finally:
+        board.pop()
 
 
 def tactical_filter_best_move(

@@ -165,6 +165,8 @@ if "last_move_time" not in st.session_state:
     st.session_state.last_move_time = 0.0
 if "last_processed_move" not in st.session_state:
     st.session_state.last_processed_move = None
+if "last_processed_move_id" not in st.session_state:
+    st.session_state.last_processed_move_id = None
 if "hint" not in st.session_state:
     st.session_state.hint = None
 if "resigned" not in st.session_state:
@@ -263,6 +265,7 @@ if selected_color != st.session_state.user_color:
     st.session_state.eval_white = 0.05
     st.session_state.top_moves = []
     st.session_state.last_processed_move = None
+    st.session_state.last_processed_move_id = None
     st.session_state.hint = None
     st.session_state.resigned = False
     st.rerun()
@@ -320,6 +323,7 @@ with col_b1:
         st.session_state.eval_white = 0.05
         st.session_state.top_moves = []
         st.session_state.last_processed_move = None
+        st.session_state.last_processed_move_id = None
         st.session_state.hint = None
         st.session_state.resigned = False
         st.session_state.cache.clear()
@@ -336,6 +340,7 @@ with col_b2:
             st.session_state.board.pop()
             st.session_state.move_history.pop()
         st.session_state.last_processed_move = None
+        st.session_state.last_processed_move_id = None
         st.session_state.hint = None
         st.session_state.resigned = False
         st.session_state.eval_white = 0.05 if len(st.session_state.move_history) == 0 else st.session_state.eval_white
@@ -374,6 +379,7 @@ with st.sidebar.expander("Custom FEN Setup"):
             st.session_state.board = chess.Board(fen_input)
             st.session_state.move_history = []
             st.session_state.last_processed_move = None
+            st.session_state.last_processed_move_id = None
             st.session_state.hint = None
             st.session_state.resigned = False
             st.session_state.eval_white = 0.0
@@ -470,10 +476,22 @@ def render_game_arena():
         # Process Move Instantaneously in the same execution cycle (Zero Reloads!)
         if component_move and "move" in component_move:
             incoming_uci = component_move["move"]
-            if incoming_uci != st.session_state.last_processed_move:
+            move_id = component_move.get("move_id")
+
+            # Validate whether this is an unprocessed user move
+            is_new_move = False
+            if move_id is not None:
+                if move_id != st.session_state.last_processed_move_id:
+                    is_new_move = True
+            elif incoming_uci != st.session_state.last_processed_move:
+                is_new_move = True
+
+            if is_new_move:
                 try:
                     mv = chess.Move.from_uci(incoming_uci)
                     if mv in board.legal_moves:
+                        if move_id is not None:
+                            st.session_state.last_processed_move_id = move_id
                         st.session_state.last_processed_move = incoming_uci
                         st.session_state.hint = None
                         board.push(mv)
@@ -500,7 +518,6 @@ def render_game_arena():
                             st.session_state.eval_white = eval_white
                             if best_move and not resigned:
                                 st.session_state.top_moves = scored_moves[:5]
-                                st.session_state.last_processed_move = best_move.uci()
                                 board.push(best_move)
                                 st.session_state.move_history.append(best_move)
                             elif resigned:
@@ -514,8 +531,8 @@ def render_game_arena():
 
                         # Smooth in-place fragment update: No page reload!
                         st.rerun(scope="fragment")
-                except Exception:
-                    pass
+                except Exception as e:
+                    st.error(f"Engine move error: {e}")
 
     with col_panel:
         # Evaluation Bar (Absolute White Perspective: +1.0 = White win, -1.0 = Black win)
@@ -666,7 +683,6 @@ def render_game_arena():
                             st.session_state.eval_white = eval_white
                             if best_move and not resigned:
                                 st.session_state.top_moves = scored_moves[:5]
-                                st.session_state.last_processed_move = best_move.uci()
                                 board.push(best_move)
                                 st.session_state.move_history.append(best_move)
                             elif resigned:
