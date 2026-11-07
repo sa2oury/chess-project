@@ -1,3 +1,4 @@
+import time
 import math
 import numpy as np
 import torch
@@ -293,7 +294,8 @@ def choose_move_with_mcts(
         visits_scaled -= np.max(visits_scaled)
         probs = np.exp(visits_scaled)
         probs /= np.sum(probs)
-        chosen_move = np.random.choice(legal_moves, p=probs)
+        chosen_idx = int(np.random.choice(len(legal_moves), p=probs))
+        chosen_move = legal_moves[chosen_idx]
 
     if return_debug:
         scored_moves = []
@@ -338,6 +340,7 @@ def get_best_move(
     temperature: float = 0.0,
     transposition_cache: dict = None,
     use_book: bool = True,
+    max_book_ply: int = 12,
     use_tactics: bool = True,
     blunder_prob: float = 0.0,
 ) -> tuple[chess.Move | None, float, list, bool]:
@@ -357,10 +360,11 @@ def get_best_move(
         if mate_move:
             return mate_move, 1.0, [(mate_move, 1.0, 1.0)], False
 
-    # 2. Opening book lookup (play instant theory move if enabled)
-    if use_book and board.ply() < 12:
-        book_move = get_opening_move(board)
+    # 2. Opening book lookup with natural pacing
+    if use_book and board.ply() < max_book_ply:
+        book_move = get_opening_move(board, max_ply=max_book_ply)
         if book_move:
+            time.sleep(0.35)  # Natural human-like pacing so opening moves don't appear in 0ms
             return book_move, 0.05, [(book_move, 0.05, 1.0)], False
 
     # If depth is given instead of simulations, convert depth proportionally
@@ -390,6 +394,12 @@ def get_best_move(
     # 4. Tactical sanity check (mate-in-1 prevention) if tactics enabled
     if use_tactics:
         chosen_move = tactical_filter_best_move(board, chosen_move, scored_moves)
+
+    # 5. Guaranteed safety fallback: Never return None if legal moves exist
+    if chosen_move is None or chosen_move not in board.legal_moves:
+        legal = list(board.legal_moves)
+        if legal:
+            chosen_move = legal[0]
 
     best_eval = debug["root_value"]
     resigned = (best_eval < resign_threshold) and (root.visit_count > 20)

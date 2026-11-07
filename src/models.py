@@ -280,9 +280,11 @@ class ONNXModel:
 
         opts = ort.SessionOptions()
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        if num_threads:
-            opts.intra_op_num_threads = num_threads
-            opts.inter_op_num_threads = 2
+        # Crucial for cloud containers (Streamlit Cloud, Docker) to prevent thread contention / stalls:
+        thread_count = num_threads if num_threads is not None else 1
+        opts.intra_op_num_threads = thread_count
+        opts.inter_op_num_threads = 1
+        opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 
         self.session = ort.InferenceSession(onnx_path, opts, providers=["CPUExecutionProvider"])
         self.input_name = self.session.get_inputs()[0].name

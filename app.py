@@ -271,11 +271,11 @@ if selected_color != st.session_state.user_color:
     st.rerun()
 
 DIFFICULTY_PRESETS = {
-    "🐣 Novice (Very Easy / Learning)": {"sims": 6, "temp": 0.85, "book": False, "tactics": False, "blunder": 0.35, "desc": "Very gentle, misses tactics, makes natural casual mistakes"},
-    "🥉 Beginner (Casual Play)": {"sims": 15, "temp": 0.45, "book": False, "tactics": False, "blunder": 0.18, "desc": "Fun & accessible, occasional inaccuracies, no heavy theory"},
-    "🥈 Intermediate (Club Player)": {"sims": 45, "temp": 0.15, "book": True, "tactics": True, "blunder": 0.0, "desc": "Balanced club strength with standard opening theory"},
-    "🥇 Master (Tactical)": {"sims": 100, "temp": 0.0, "book": True, "tactics": True, "blunder": 0.0, "desc": "Sharp tactical calculation and solid endgame play"},
-    "⚡ Grandmaster (Max Depth)": {"sims": 220, "temp": 0.0, "book": True, "tactics": True, "blunder": 0.0, "desc": "Peak AlphaZero engine depth and tactical precision"},
+    "🐣 Novice (Very Easy / Learning)": {"sims": 8, "temp": 0.75, "book": True, "max_book_ply": 4, "tactics": False, "blunder": 0.35, "desc": "Very gentle, misses tactics, makes natural casual mistakes"},
+    "🥉 Beginner (Casual Play)": {"sims": 18, "temp": 0.40, "book": True, "max_book_ply": 6, "tactics": False, "blunder": 0.18, "desc": "Fun & accessible, occasional inaccuracies, gentle theory"},
+    "🥈 Intermediate (Club Player)": {"sims": 50, "temp": 0.15, "book": True, "max_book_ply": 12, "tactics": True, "blunder": 0.0, "desc": "Balanced club strength with standard opening theory"},
+    "🥇 Master (Tactical)": {"sims": 100, "temp": 0.0, "book": True, "max_book_ply": 12, "tactics": True, "blunder": 0.0, "desc": "Sharp tactical calculation and solid endgame play"},
+    "⚡ Grandmaster (Max Depth)": {"sims": 220, "temp": 0.0, "book": True, "max_book_ply": 12, "tactics": True, "blunder": 0.0, "desc": "Peak AlphaZero engine depth and tactical precision"},
     "🛠️ Custom Settings": None,
 }
 
@@ -290,6 +290,7 @@ if DIFFICULTY_PRESETS[diff_choice] is not None:
     simulations = preset["sims"]
     temperature = preset["temp"]
     use_book = preset["book"]
+    max_book_ply = preset["max_book_ply"]
     use_tactics = preset["tactics"]
     blunder_prob = preset["blunder"]
     st.sidebar.caption(f"ℹ️ *{preset['desc']}*")
@@ -311,6 +312,7 @@ else:
         help="0.0 plays the best move. Higher values introduce human-like variety."
     )
     use_book = st.sidebar.checkbox("Opening Theory Book", value=True)
+    max_book_ply = 12
     use_tactics = st.sidebar.checkbox("Tactical Sanity Shield", value=True)
     blunder_prob = 0.0
 
@@ -357,7 +359,8 @@ with col_act1:
                     device="cpu",
                     num_simulations=min(simulations, 60),
                     temperature=0.0,
-                    transposition_cache=st.session_state.cache
+                    transposition_cache=st.session_state.cache,
+                    max_book_ply=max_book_ply,
                 )
                 if h_move:
                     san_m = st.session_state.board.san(h_move)
@@ -409,7 +412,7 @@ def render_game_arena():
 
     # If user selected Black and game just started: AI plays White move 1 immediately
     if len(st.session_state.move_history) == 0 and not is_human_turn and not game_over:
-        with st.spinner("AlphaZero opening move..."):
+        with st.spinner("🤖 AlphaZero opening move..."):
             best_move, best_eval, scored_moves, _ = get_best_move(
                 board=board,
                 model=model,
@@ -418,6 +421,7 @@ def render_game_arena():
                 temperature=temperature,
                 transposition_cache=st.session_state.cache,
                 use_book=use_book,
+                max_book_ply=max_book_ply,
                 use_tactics=use_tactics,
                 blunder_prob=blunder_prob,
             )
@@ -501,17 +505,19 @@ def render_game_arena():
                         if not board.is_game_over(claim_draw=True):
                             t0 = time.perf_counter()
                             search_turn = board.turn
-                            best_move, best_eval, scored_moves, resigned = get_best_move(
-                                board=board,
-                                model=model,
-                                device="cpu",
-                                num_simulations=simulations,
-                                temperature=temperature,
-                                transposition_cache=st.session_state.cache,
-                                use_book=use_book,
-                                use_tactics=use_tactics,
-                                blunder_prob=blunder_prob,
-                            )
+                            with st.spinner("🤖 AlphaZero is calculating move..."):
+                                best_move, best_eval, scored_moves, resigned = get_best_move(
+                                    board=board,
+                                    model=model,
+                                    device="cpu",
+                                    num_simulations=simulations,
+                                    temperature=temperature,
+                                    transposition_cache=st.session_state.cache,
+                                    use_book=use_book,
+                                    max_book_ply=max_book_ply,
+                                    use_tactics=use_tactics,
+                                    blunder_prob=blunder_prob,
+                                )
                             st.session_state.last_move_time = time.perf_counter() - t0
                             # Convert best_eval (search_turn perspective) to absolute White perspective
                             eval_white = best_eval if search_turn == chess.WHITE else -best_eval
@@ -667,17 +673,19 @@ def render_game_arena():
                         if not board.is_game_over(claim_draw=True):
                             t0 = time.perf_counter()
                             search_turn = board.turn
-                            best_move, best_eval, scored_moves, resigned = get_best_move(
-                                board=board,
-                                model=model,
-                                device="cpu",
-                                num_simulations=simulations,
-                                temperature=temperature,
-                                transposition_cache=st.session_state.cache,
-                                use_book=use_book,
-                                use_tactics=use_tactics,
-                                blunder_prob=blunder_prob,
-                            )
+                            with st.spinner("🤖 AlphaZero is calculating move..."):
+                                best_move, best_eval, scored_moves, resigned = get_best_move(
+                                    board=board,
+                                    model=model,
+                                    device="cpu",
+                                    num_simulations=simulations,
+                                    temperature=temperature,
+                                    transposition_cache=st.session_state.cache,
+                                    use_book=use_book,
+                                    max_book_ply=max_book_ply,
+                                    use_tactics=use_tactics,
+                                    blunder_prob=blunder_prob,
+                                )
                             st.session_state.last_move_time = time.perf_counter() - t0
                             eval_white = best_eval if search_turn == chess.WHITE else -best_eval
                             st.session_state.eval_white = eval_white
