@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Chessboard</title>
+  
+  <!-- Chessboard.js CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+  
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+    }
+    #board-wrapper {
+      position: relative;
+      width: 480px;
+      max-width: 95vw;
+    }
+    #board {
+      width: 100%;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    }
+    /* Chess.com Authentic Board Colors */
+    .white-1e1d7 {
+      background-color: #eeeed2 !important;
+      color: #769656 !important;
+    }
+    .black-3c85d {
+      background-color: #769656 !important;
+      color: #eeeed2 !important;
+    }
+    /* Square highlight for selected piece & last move */
+    .highlight-selected {
+      background-color: #baca44 !important;
+    }
+    .highlight-last-move {
+      background-color: rgba(245, 246, 130, 0.65) !important;
+    }
+    /* Chess.com Valid Move Dots */
+    .dot-hint {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 28%;
+      height: 28%;
+      background: rgba(20, 20, 20, 0.22);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .capture-hint {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+      border: 6px solid rgba(20, 20, 20, 0.22);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 5;
+    }
+  </style>
+
+  <!-- jQuery & Chessboard.js & Chess.js -->
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+</head>
+<body>
+
+  <div id="board-wrapper">
+    <div id="board"></div>
+  </div>
+
+  <script>
+    // =========================================================
+    // SYNTHESIZED WEB AUDIO EFFECTS (No external files needed)
+    // =========================================================
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function playSound(type) {
+      try {
+        if (!audioCtx) audioCtx = new AudioCtx();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        const now = audioCtx.currentTime;
+
+        if (type === 'move') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(260, now);
+          osc.frequency.exponentialRampToValueAtTime(140, now + 0.08);
+          gain.gain.setValueAtTime(0.4, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+          osc.start(now);
+          osc.stop(now + 0.08);
+        } else if (type === 'capture') {
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(320, now);
+          osc.frequency.exponentialRampToValueAtTime(110, now + 0.12);
+          gain.gain.setValueAtTime(0.5, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+          osc.start(now);
+          osc.stop(now + 0.12);
+        } else if (type === 'check') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(440, now);
+          osc.frequency.setValueAtTime(660, now + 0.07);
+          gain.gain.setValueAtTime(0.4, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+          osc.start(now);
+          osc.stop(now + 0.18);
+        }
+      } catch (e) {
+        // Audio might be blocked until user gesture, ignore safely
+      }
+    }
+
+    // =========================================================
+    // STREAMLIT COMPONENT PROTOCOL
+    // =========================================================
+    function sendValue(val) {
+      window.parent.postMessage({
+        isStreamlitMessage: true,
+        type: 'streamlit:setComponentValue',
+        value: val
+      }, '*');
+    }
+
+    function setFrameHeight() {
+      const height = document.getElementById('board-wrapper').offsetHeight + 20;
+      window.parent.postMessage({
+        isStreamlitMessage: true,
+        type: 'streamlit:setFrameHeight',
+        height: height
+      }, '*');
+    }
+
+    window.parent.postMessage({
+      isStreamlitMessage: true,
+      type: 'streamlit:componentReady',
+      apiVersion: 1
+    }, '*');
+
+    // =========================================================
+    // CHESS GAME STATE & BOARD SETUP
+    // =========================================================
+    let board = null;
+    let game = new Chess();
+    let selectedSquare = null;
+    let isInteractive = true;
+    let currentOrientation = 'white';
+    let lastMove = null;
+
+    function removeHints() {
+      $('.dot-hint').remove();
+      $('.capture-hint').remove();
+      $('#board .square-55d63').removeClass('highlight-selected');
+    }
+
+    function highlightSquare(sq) {
+      $('#board .square-' + sq).addClass('highlight-selected');
+    }
+
+    function highlightLastMove() {
+      $('#board .square-55d63').removeClass('highlight-last-move');
+      if (lastMove && lastMove.length >= 4) {
+        const fromSq = lastMove.substring(0, 2);
+        const toSq = lastMove.substring(2, 4);
+        $('#board .square-' + fromSq).addClass('highlight-last-move');
+        $('#board .square-' + toSq).addClass('highlight-last-move');
+      }
+    }
+
+    function showLegalMoves(square) {
+      removeHints();
+      highlightSquare(square);
+
+      const moves = game.moves({
+        square: square,
+        verbose: true
+      });
+
+      if (moves.length === 0) return;
+
+      for (let i = 0; i < moves.length; i++) {
+        const m = moves[i];
+        const $targetSquare = $('#board .square-' + m.to);
+
+        if (m.captured) {
+          $targetSquare.append('<div class="capture-hint"></div>');
+        } else {
+          $targetSquare.append('<div class="dot-hint"></div>');
+        }
+      }
+    }
+
+    function tryMove(from, to) {
+      // Auto-promote pawn to Queen
+      const piece = game.get(from);
+      let promotion = 'q';
+
+      const moveObj = game.move({
+        from: from,
+        to: to,
+        promotion: promotion
+      });
+
+      if (moveObj === null) return false;
+
+      // Sound
+      if (game.in_check()) {
+        playSound('check');
+      } else if (moveObj.captured) {
+        playSound('capture');
+      } else {
+        playSound('move');
+      }
+
+      board.position(game.fen());
+      lastMove = from + to + (moveObj.promotion || '');
+      highlightLastMove();
+      removeHints();
+
+      // Transmit move to Python
+      sendValue({
+        move: lastMove,
+        san: moveObj.san,
+        fen: game.fen()
+      });
+
+      return true;
+    }
+
+    // Initialize Chessboard
+    board = Chessboard('board', {
+      position: 'start',
+      draggable: true,
+      pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+      
+      onDragStart: function(source, piece, position, orientation) {
+        if (!isInteractive || game.game_over()) return false;
+
+        // Ensure user can only move their pieces
+        const playerColor = orientation === 'white' ? 'w' : 'b';
+        if (piece.search(new RegExp('^' + playerColor)) === -1) return false;
+
+        selectedSquare = source;
+        showLegalMoves(source);
+      },
+
+      onDrop: function(source, target) {
+        removeHints();
+        selectedSquare = null;
+
+        if (source === target) return;
+        const valid = tryMove(source, target);
+        if (!valid) return 'snapback';
+      },
+
+      onSnapEnd: function() {
+        board.position(game.fen());
+      }
+    });
+
+    // Click-to-Move Handler
+    $('#board').on('click', '.square-55d63', function() {
+      if (!isInteractive || game.game_over()) return;
+
+      const square = $(this).attr('data-square');
+      if (!square) return;
+
+      const piece = game.get(square);
+      const playerColor = currentOrientation === 'white' ? 'w' : 'b';
+
+      // 1. If clicking on one of the user's pieces -> select & show dots
+      if (piece && piece.color === playerColor) {
+        selectedSquare = square;
+        showLegalMoves(square);
+        return;
+      }
+
+      // 2. If a piece was already selected and clicking on another square -> try move
+      if (selectedSquare) {
+        const moved = tryMove(selectedSquare, square);
+        selectedSquare = null;
+        removeHints();
+      }
+    });
+
+    // Responsive Resizing
+    $(window).on('resize', function() {
+      board.resize();
+      highlightLastMove();
+      setFrameHeight();
+    });
+
+    setTimeout(setFrameHeight, 150);
+
+    // =========================================================
+    // STREAMLIT INCOMING RENDER DISPATCHER
+    // =========================================================
+    window.addEventListener('message', function(event) {
+      if (!event.data || event.data.type !== 'streamlit:render') return;
+
+      const args = event.data.args || {};
+      const newFen = args.fen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+      const newOrientation = args.orientation || 'white';
+      isInteractive = (args.is_interactive !== undefined) ? args.is_interactive : true;
+      lastMove = args.last_move || null;
+
+      if (currentOrientation !== newOrientation) {
+        currentOrientation = newOrientation;
+        board.orientation(newOrientation);
+      }
+
+      if (game.fen() !== newFen) {
+        game.load(newFen);
+        board.position(newFen, false);
+      }
+
+      removeHints();
+      highlightLastMove();
+      setFrameHeight();
+    });
+  </script>
+</body>
+</html>
