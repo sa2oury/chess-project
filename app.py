@@ -320,115 +320,24 @@ with st.sidebar.expander("Custom FEN Setup"):
 # HEADER
 # =========================================================
 st.markdown("<h1 class='main-title'>♟️ AlphaZero Chess</h1>", unsafe_allow_html=True)
-st.markdown("<div class='sub-title'>Interactive Chess.com-style board with click-to-move, hints, and sound effects</div>", unsafe_allow_html=True)
-
-board = st.session_state.board
-user_is_white = (st.session_state.user_color == "White")
-is_human_turn = (board.turn == chess.WHITE and user_is_white) or (board.turn == chess.BLACK and not user_is_white)
-game_over = board.is_game_over(claim_draw=True)
-mat = get_material_info(board)
-
-# Layout columns
-col_board, col_panel = st.columns([1.18, 1.0])
-
-# =========================================================
-# 1. INTERACTIVE CHESSBOARD (Chess.com gameplay)
-# =========================================================
-with col_board:
-    # Opponent Top Bar
-    opp_name = "AlphaZero AI (Engine)" if user_is_white else "You (Human)"
-    opp_captured = mat["white_captured"] if not user_is_white else mat["black_captured"]
-    opp_adv = mat["white_adv"] if not user_is_white else mat["black_adv"]
-
-    st.markdown(f"""
-    <div class="player-card">
-        <div class="player-name">🤖 {opp_name}</div>
-        <div>
-            <span class="captured-pieces">{opp_captured}</span>
-            {f'<span class="advantage-badge">{opp_adv}</span>' if opp_adv else ''}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Render Chess.com-style Interactive Board
-    last_played_uci = st.session_state.move_history[-1].uci() if st.session_state.move_history else None
-
-    component_move = interactive_chessboard(
-        fen=board.fen(),
-        orientation="white" if user_is_white else "black",
-        is_interactive=(is_human_turn and not game_over),
-        last_move=last_played_uci,
-        key=f"board_{len(st.session_state.move_history)}"
-    )
-
-    # Player Bottom Bar
-    user_name = "You (Human)" if user_is_white else "AlphaZero AI (Engine)"
-    user_captured = mat["white_captured"] if user_is_white else mat["black_captured"]
-    user_adv = mat["white_adv"] if user_is_white else mat["black_adv"]
-
-    st.markdown(f"""
-    <div class="player-card">
-        <div class="player-name">👤 {user_name}</div>
-        <div>
-            <span class="captured-pieces">{user_captured}</span>
-            {f'<span class="advantage-badge">{user_adv}</span>' if user_adv else ''}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Process Human Move from Interactive Component
-    if component_move and "move" in component_move:
-        incoming_uci = component_move["move"]
-        if incoming_uci != st.session_state.last_processed_move:
-            try:
-                mv = chess.Move.from_uci(incoming_uci)
-                if mv in board.legal_moves:
-                    st.session_state.last_processed_move = incoming_uci
-                    board.push(mv)
-                    st.session_state.move_history.append(mv)
-                    st.rerun()
-            except Exception:
-                pass
+st.markdown("<div class='sub-title'>Live, fluid Chess.com-style board with real-time moves, hints, and sound effects</div>", unsafe_allow_html=True)
 
 
 # =========================================================
-# 2. ANALYSIS & GAME PANEL
+# LIVE GAMEPLAY ARENA (FRAGMENT: NO FULL PAGE RELOADS)
 # =========================================================
-with col_panel:
-    # Evaluation Bar
-    eval_val = st.session_state.last_eval  # in [-1.0, 1.0] from current player perspective
-    eval_for_white = eval_val if board.turn == chess.WHITE else -eval_val
-    white_win_pct = max(0, min(100, int((eval_for_white + 1.0) / 2.0 * 100)))
+@st.fragment
+def render_game_arena():
+    board = st.session_state.board
+    user_is_white = (st.session_state.user_color == "White")
+    is_human_turn = (board.turn == chess.WHITE and user_is_white) or (board.turn == chess.BLACK and not user_is_white)
+    game_over = board.is_game_over(claim_draw=True)
+    mat = get_material_info(board)
 
-    st.markdown("<div class='eval-card'>", unsafe_allow_html=True)
-    turn_label = "Your Turn" if is_human_turn else "AlphaZero Thinking..."
-    turn_class = "turn-human" if is_human_turn else "turn-engine"
-    eval_text = "White Advantage" if eval_for_white > 0.08 else ("Black Advantage" if eval_for_white < -0.08 else "Equal Position")
-
-    st.markdown(f"""
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <span class="turn-badge {turn_class}">● {turn_label}</span>
-        <span style="font-weight: 700; color: #ffffff;">{eval_text} ({eval_for_white:+.2f})</span>
-    </div>
-    """, unsafe_allow_html=True)
-    st.progress(white_win_pct / 100.0, text=f"White: {white_win_pct}% | Black: {100 - white_win_pct}%")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # Game Over Status Banner
-    if game_over:
-        outcome = board.outcome(claim_draw=True)
-        res = board.result(claim_draw=True)
-        if outcome and outcome.winner is not None:
-            winner = "White" if outcome.winner == chess.WHITE else "Black"
-            st.success(f"🏆 Game Over: **{winner} won by checkmate!** ({res})")
-        else:
-            st.info(f"🤝 Game Over: **Draw ({res})**")
-
-    # Engine Turn Execution
-    elif not is_human_turn:
-        with st.spinner(f"AlphaZero calculating ({simulations} simulations)..."):
-            t0 = time.perf_counter()
-            best_move, best_eval, scored_moves, resigned = get_best_move(
+    # If user selected Black and game just started: AI plays White move 1 immediately
+    if len(st.session_state.move_history) == 0 and not is_human_turn and not game_over:
+        with st.spinner("AlphaZero opening move..."):
+            best_move, best_eval, scored_moves, _ = get_best_move(
                 board=board,
                 model=model,
                 device="cpu",
@@ -436,80 +345,189 @@ with col_panel:
                 temperature=temperature,
                 transposition_cache=st.session_state.cache,
             )
-            elapsed = time.perf_counter() - t0
-            st.session_state.last_move_time = elapsed
-
-            if resigned or best_move is None:
-                st.warning("AlphaZero has resigned.")
-            else:
+            if best_move:
+                board.push(best_move)
+                st.session_state.move_history.append(best_move)
                 st.session_state.last_eval = best_eval
                 st.session_state.top_moves = scored_moves[:5]
                 st.session_state.last_processed_move = best_move.uci()
-                board.push(best_move)
-                st.session_state.move_history.append(best_move)
+                st.rerun(scope="fragment")
 
-        st.rerun()
+    col_board, col_panel = st.columns([1.18, 1.0])
 
-    # Move History Table (Chess.com Style)
-    st.subheader("📜 Move History")
-    if st.session_state.move_history:
-        st.markdown("<div class='moves-table-container'>", unsafe_allow_html=True)
-        temp_b = chess.Board()
-        table_html = ""
-        for i in range(0, len(st.session_state.move_history), 2):
-            move_num = (i // 2) + 1
-            w_move = temp_b.san(st.session_state.move_history[i])
-            temp_b.push(st.session_state.move_history[i])
+    with col_board:
+        # Opponent Top Bar
+        opp_name = "AlphaZero AI (Engine)" if user_is_white else "You (Human)"
+        opp_captured = mat["white_captured"] if not user_is_white else mat["black_captured"]
+        opp_adv = mat["white_adv"] if not user_is_white else mat["black_adv"]
 
-            b_move = ""
-            if i + 1 < len(st.session_state.move_history):
-                b_move = temp_b.san(st.session_state.move_history[i + 1])
-                temp_b.push(st.session_state.move_history[i + 1])
-
-            table_html += f"""
-            <div class="move-row">
-                <span class="move-num">{move_num}.</span>
-                <span class="move-white">{w_move}</span>
-                <span class="move-black">{b_move}</span>
+        st.markdown(f"""
+        <div class="player-card">
+            <div class="player-name">🤖 {opp_name}</div>
+            <div>
+                <span class="captured-pieces">{opp_captured}</span>
+                {f'<span class="advantage-badge">{opp_adv}</span>' if opp_adv else ''}
             </div>
-            """
-        st.markdown(table_html + "</div>", unsafe_allow_html=True)
-    else:
-        st.caption("No moves played yet. Click a piece to begin.")
+        </div>
+        """, unsafe_allow_html=True)
 
-    # Engine Candidate Analysis Tab
-    if st.session_state.top_moves:
-        st.subheader("🔍 Engine Thought Process")
-        analysis_data = []
-        for mv, q, prob in st.session_state.top_moves:
-            analysis_data.append({
-                "Candidate Move": mv.uci(),
-                "Evaluation (Q)": f"{q:+.3f}",
-                "Prior Prob": f"{prob*100:.1f}%"
-            })
-        st.table(analysis_data)
-        if st.session_state.last_move_time > 0:
-            st.caption(f"⚡ Last move searched in {st.session_state.last_move_time:.2f}s ({simulations} sims) via {engine_badge}")
+        # Permanent static key so the board iframe is NEVER destroyed or reloaded
+        last_played_uci = st.session_state.move_history[-1].uci() if st.session_state.move_history else None
 
-    # Fallback Manual Move Input (Expander)
-    with st.expander("⌨️ Keyboard / Manual SAN Move Input", expanded=False):
-        manual_txt = st.text_input("Enter Move (e.g. e4, Nf3, e2e4):", key="manual_move_txt")
-        if st.button("Submit Move", key="manual_submit_btn"):
-            if manual_txt.strip():
+        component_move = interactive_chessboard(
+            fen=board.fen(),
+            orientation="white" if user_is_white else "black",
+            is_interactive=(is_human_turn and not game_over),
+            last_move=last_played_uci,
+            key="chessboard_interactive_main"
+        )
+
+        # Player Bottom Bar
+        user_name = "You (Human)" if user_is_white else "AlphaZero AI (Engine)"
+        user_captured = mat["white_captured"] if user_is_white else mat["black_captured"]
+        user_adv = mat["white_adv"] if user_is_white else mat["black_adv"]
+
+        st.markdown(f"""
+        <div class="player-card">
+            <div class="player-name">👤 {user_name}</div>
+            <div>
+                <span class="captured-pieces">{user_captured}</span>
+                {f'<span class="advantage-badge">{user_adv}</span>' if user_adv else ''}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Process Move Instantaneously in the same execution cycle (Zero Reloads!)
+        if component_move and "move" in component_move:
+            incoming_uci = component_move["move"]
+            if incoming_uci != st.session_state.last_processed_move:
                 try:
-                    parsed = board.parse_san(manual_txt.strip())
-                except Exception:
-                    try:
-                        parsed = chess.Move.from_uci(manual_txt.strip().lower())
-                        if parsed not in board.legal_moves:
-                            parsed = None
-                    except Exception:
-                        parsed = None
+                    mv = chess.Move.from_uci(incoming_uci)
+                    if mv in board.legal_moves:
+                        st.session_state.last_processed_move = incoming_uci
+                        board.push(mv)
+                        st.session_state.move_history.append(mv)
 
-                if parsed and parsed in board.legal_moves:
-                    st.session_state.last_processed_move = parsed.uci()
-                    board.push(parsed)
-                    st.session_state.move_history.append(parsed)
-                    st.rerun()
-                else:
-                    st.error("Invalid chess move.")
+                        # Immediately calculate Engine reply in the same fragment cycle!
+                        if not board.is_game_over(claim_draw=True):
+                            t0 = time.perf_counter()
+                            best_move, best_eval, scored_moves, resigned = get_best_move(
+                                board=board,
+                                model=model,
+                                device="cpu",
+                                num_simulations=simulations,
+                                temperature=temperature,
+                                transposition_cache=st.session_state.cache,
+                            )
+                            st.session_state.last_move_time = time.perf_counter() - t0
+                            if best_move and not resigned:
+                                st.session_state.last_eval = best_eval
+                                st.session_state.top_moves = scored_moves[:5]
+                                st.session_state.last_processed_move = best_move.uci()
+                                board.push(best_move)
+                                st.session_state.move_history.append(best_move)
+                            elif resigned:
+                                st.session_state.last_eval = -1.0
+
+                        # Smooth in-place fragment update: No page reload!
+                        st.rerun(scope="fragment")
+                except Exception:
+                    pass
+
+    with col_panel:
+        # Evaluation Bar
+        eval_val = st.session_state.last_eval
+        eval_for_white = eval_val if board.turn == chess.WHITE else -eval_val
+        white_win_pct = max(0, min(100, int((eval_for_white + 1.0) / 2.0 * 100)))
+
+        st.markdown("<div class='eval-card'>", unsafe_allow_html=True)
+        turn_label = "Your Turn" if is_human_turn else "AlphaZero Thinking..."
+        turn_class = "turn-human" if is_human_turn else "turn-engine"
+        eval_text = "White Advantage" if eval_for_white > 0.08 else ("Black Advantage" if eval_for_white < -0.08 else "Equal Position")
+
+        st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span class="turn-badge {turn_class}">● {turn_label}</span>
+            <span style="font-weight: 700; color: #ffffff;">{eval_text} ({eval_for_white:+.2f})</span>
+        </div>
+        """, unsafe_allow_html=True)
+        st.progress(white_win_pct / 100.0, text=f"White: {white_win_pct}% | Black: {100 - white_win_pct}%")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Game Over Banner
+        if game_over:
+            outcome = board.outcome(claim_draw=True)
+            res = board.result(claim_draw=True)
+            if outcome and outcome.winner is not None:
+                winner = "White" if outcome.winner == chess.WHITE else "Black"
+                st.success(f"🏆 Game Over: **{winner} won by checkmate!** ({res})")
+            else:
+                st.info(f"🤝 Game Over: **Draw ({res})**")
+
+        # Move History Table (Chess.com Style)
+        st.subheader("📜 Move History")
+        if st.session_state.move_history:
+            st.markdown("<div class='moves-table-container'>", unsafe_allow_html=True)
+            temp_b = chess.Board()
+            table_html = ""
+            for i in range(0, len(st.session_state.move_history), 2):
+                move_num = (i // 2) + 1
+                w_move = temp_b.san(st.session_state.move_history[i])
+                temp_b.push(st.session_state.move_history[i])
+
+                b_move = ""
+                if i + 1 < len(st.session_state.move_history):
+                    b_move = temp_b.san(st.session_state.move_history[i + 1])
+                    temp_b.push(st.session_state.move_history[i + 1])
+
+                table_html += f"""
+                <div class="move-row">
+                    <span class="move-num">{move_num}.</span>
+                    <span class="move-white">{w_move}</span>
+                    <span class="move-black">{b_move}</span>
+                </div>
+                """
+            st.markdown(table_html + "</div>", unsafe_allow_html=True)
+        else:
+            st.caption("No moves played yet. Click a piece to begin.")
+
+        # Engine Candidate Analysis Tab
+        if st.session_state.top_moves:
+            st.subheader("🔍 Engine Thought Process")
+            analysis_data = []
+            for mv, q, prob in st.session_state.top_moves:
+                analysis_data.append({
+                    "Candidate Move": mv.uci(),
+                    "Evaluation (Q)": f"{q:+.3f}",
+                    "Prior Prob": f"{prob*100:.1f}%"
+                })
+            st.table(analysis_data)
+            if st.session_state.last_move_time > 0:
+                st.caption(f"⚡ Last move searched in {st.session_state.last_move_time:.2f}s ({simulations} sims) via {engine_badge}")
+
+        # Fallback Keyboard / SAN Input in an Expander
+        with st.expander("⌨️ Keyboard / Manual SAN Move Input", expanded=False):
+            manual_txt = st.text_input("Enter Move (e.g. e4, Nf3, e2e4):", key="manual_move_txt")
+            if st.button("Submit Move", key="manual_submit_btn"):
+                if manual_txt.strip():
+                    try:
+                        parsed = board.parse_san(manual_txt.strip())
+                    except Exception:
+                        try:
+                            parsed = chess.Move.from_uci(manual_txt.strip().lower())
+                            if parsed not in board.legal_moves:
+                                parsed = None
+                        except Exception:
+                            parsed = None
+
+                    if parsed and parsed in board.legal_moves:
+                        st.session_state.last_processed_move = parsed.uci()
+                        board.push(parsed)
+                        st.session_state.move_history.append(parsed)
+                        st.rerun(scope="fragment")
+                    else:
+                        st.error("Invalid chess move.")
+
+
+# Render the live arena
+render_game_arena()

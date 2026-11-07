@@ -338,7 +338,12 @@
 
       if (game.fen() !== newFen) {
         game.load(newFen);
-        board.position(newFen, false);
+        board.position(newFen, true); // Smooth piece slide animation
+        if (game.in_check()) {
+          playSound('check');
+        } else {
+          playSound('move');
+        }
       }
 
       removeHints();
