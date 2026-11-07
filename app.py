@@ -154,8 +154,8 @@ if "move_history" not in st.session_state:
     st.session_state.move_history = []
 if "user_color" not in st.session_state:
     st.session_state.user_color = "White"
-if "last_eval" not in st.session_state:
-    st.session_state.last_eval = 0.0
+if "eval_white" not in st.session_state:
+    st.session_state.eval_white = 0.0
 if "top_moves" not in st.session_state:
     st.session_state.top_moves = []
 if "cache" not in st.session_state:
@@ -255,7 +255,7 @@ if selected_color != st.session_state.user_color:
     st.session_state.user_color = selected_color
     st.session_state.board = chess.Board()
     st.session_state.move_history = []
-    st.session_state.last_eval = 0.0
+    st.session_state.eval_white = 0.05
     st.session_state.top_moves = []
     st.session_state.last_processed_move = None
     st.rerun()
@@ -284,7 +284,7 @@ with col_b1:
     if st.button("🔄 New Game", use_container_width=True):
         st.session_state.board = chess.Board()
         st.session_state.move_history = []
-        st.session_state.last_eval = 0.0
+        st.session_state.eval_white = 0.05
         st.session_state.top_moves = []
         st.session_state.last_processed_move = None
         st.session_state.cache.clear()
@@ -301,6 +301,7 @@ with col_b2:
             st.session_state.board.pop()
             st.session_state.move_history.pop()
         st.session_state.last_processed_move = None
+        st.session_state.eval_white = 0.05 if len(st.session_state.move_history) == 0 else st.session_state.eval_white
         st.rerun()
 
 with st.sidebar.expander("Custom FEN Setup"):
@@ -310,6 +311,7 @@ with st.sidebar.expander("Custom FEN Setup"):
             st.session_state.board = chess.Board(fen_input)
             st.session_state.move_history = []
             st.session_state.last_processed_move = None
+            st.session_state.eval_white = 0.0
             st.success("Board loaded from FEN!")
             st.rerun()
         except Exception as e:
@@ -348,7 +350,7 @@ def render_game_arena():
             if best_move:
                 board.push(best_move)
                 st.session_state.move_history.append(best_move)
-                st.session_state.last_eval = best_eval
+                st.session_state.eval_white = best_eval
                 st.session_state.top_moves = scored_moves[:5]
                 st.session_state.last_processed_move = best_move.uci()
                 st.rerun(scope="fragment")
@@ -411,6 +413,7 @@ def render_game_arena():
                         # Immediately calculate Engine reply in the same fragment cycle!
                         if not board.is_game_over(claim_draw=True):
                             t0 = time.perf_counter()
+                            search_turn = board.turn
                             best_move, best_eval, scored_moves, resigned = get_best_move(
                                 board=board,
                                 model=model,
@@ -420,14 +423,22 @@ def render_game_arena():
                                 transposition_cache=st.session_state.cache,
                             )
                             st.session_state.last_move_time = time.perf_counter() - t0
+                            # Convert best_eval (search_turn perspective) to absolute White perspective
+                            eval_white = best_eval if search_turn == chess.WHITE else -best_eval
+                            st.session_state.eval_white = eval_white
                             if best_move and not resigned:
-                                st.session_state.last_eval = best_eval
                                 st.session_state.top_moves = scored_moves[:5]
                                 st.session_state.last_processed_move = best_move.uci()
                                 board.push(best_move)
                                 st.session_state.move_history.append(best_move)
                             elif resigned:
-                                st.session_state.last_eval = -1.0
+                                st.session_state.eval_white = 1.0 if search_turn == chess.BLACK else -1.0
+                        else:
+                            outcome = board.outcome(claim_draw=True)
+                            if outcome and outcome.winner is not None:
+                                st.session_state.eval_white = 1.0 if outcome.winner == chess.WHITE else -1.0
+                            else:
+                                st.session_state.eval_white = 0.0
 
                         # Smooth in-place fragment update: No page reload!
                         st.rerun(scope="fragment")
@@ -435,23 +446,28 @@ def render_game_arena():
                     pass
 
     with col_panel:
-        # Evaluation Bar
-        eval_val = st.session_state.last_eval
-        eval_for_white = eval_val if board.turn == chess.WHITE else -eval_val
-        white_win_pct = max(0, min(100, int((eval_for_white + 1.0) / 2.0 * 100)))
+        # Evaluation Bar (Absolute White Perspective: +1.0 = White win, -1.0 = Black win)
+        eval_for_white = max(-1.0, min(1.0, float(st.session_state.eval_white)))
+        white_win_pct = max(0, min(100, int(round((eval_for_white + 1.0) / 2.0 * 100))))
+        black_win_pct = 100 - white_win_pct
 
         st.markdown("<div class='eval-card'>", unsafe_allow_html=True)
         turn_label = "Your Turn" if is_human_turn else "AlphaZero Thinking..."
         turn_class = "turn-human" if is_human_turn else "turn-engine"
-        eval_text = "White Advantage" if eval_for_white > 0.08 else ("Black Advantage" if eval_for_white < -0.08 else "Equal Position")
+        if eval_for_white > 0.08:
+            eval_text = f"White Advantage ({eval_for_white:+.2f})"
+        elif eval_for_white < -0.08:
+            eval_text = f"Black Advantage ({-eval_for_white:+.2f})"
+        else:
+            eval_text = f"Equal Position ({eval_for_white:+.2f})"
 
         st.markdown(f"""
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <span class="turn-badge {turn_class}">● {turn_label}</span>
-            <span style="font-weight: 700; color: #ffffff;">{eval_text} ({eval_for_white:+.2f})</span>
+            <span style="font-weight: 700; color: #ffffff;">{eval_text}</span>
         </div>
         """, unsafe_allow_html=True)
-        st.progress(white_win_pct / 100.0, text=f"White: {white_win_pct}% | Black: {100 - white_win_pct}%")
+        st.progress(white_win_pct / 100.0, text=f"White: {white_win_pct}% | Black: {black_win_pct}%")
         st.markdown("</div>", unsafe_allow_html=True)
 
         # Game Over Banner
@@ -524,6 +540,35 @@ def render_game_arena():
                         st.session_state.last_processed_move = parsed.uci()
                         board.push(parsed)
                         st.session_state.move_history.append(parsed)
+
+                        if not board.is_game_over(claim_draw=True):
+                            t0 = time.perf_counter()
+                            search_turn = board.turn
+                            best_move, best_eval, scored_moves, resigned = get_best_move(
+                                board=board,
+                                model=model,
+                                device="cpu",
+                                num_simulations=simulations,
+                                temperature=temperature,
+                                transposition_cache=st.session_state.cache,
+                            )
+                            st.session_state.last_move_time = time.perf_counter() - t0
+                            eval_white = best_eval if search_turn == chess.WHITE else -best_eval
+                            st.session_state.eval_white = eval_white
+                            if best_move and not resigned:
+                                st.session_state.top_moves = scored_moves[:5]
+                                st.session_state.last_processed_move = best_move.uci()
+                                board.push(best_move)
+                                st.session_state.move_history.append(best_move)
+                            elif resigned:
+                                st.session_state.eval_white = 1.0 if search_turn == chess.BLACK else -1.0
+                        else:
+                            outcome = board.outcome(claim_draw=True)
+                            if outcome and outcome.winner is not None:
+                                st.session_state.eval_white = 1.0 if outcome.winner == chess.WHITE else -1.0
+                            else:
+                                st.session_state.eval_white = 0.0
+
                         st.rerun(scope="fragment")
                     else:
                         st.error("Invalid chess move.")
