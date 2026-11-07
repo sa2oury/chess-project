@@ -94,3 +94,4 @@ def get_opening_move(board: chess.Board, max_ply: int = 12) -> chess.Move | None
         return random.choice(matching_continuations)
 
     return None
+

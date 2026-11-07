@@ -338,21 +338,24 @@ def get_best_move(
     temperature: float = 0.0,
     transposition_cache: dict = None,
     use_book: bool = True,
+    use_tactics: bool = True,
+    blunder_prob: float = 0.0,
 ) -> tuple[chess.Move | None, float, list, bool]:
     """
     Evaluates board and returns the best move.
-    1. Checks for immediate forced mate-in-1 (0 ms).
-    2. Checks opening book for theory moves (0 ms).
+    1. Checks for immediate forced mate-in-1 (if use_tactics=True).
+    2. Checks opening book for theory moves (if use_book=True).
     3. Runs high-speed MCTS search.
-    4. Applies tactical sanity check to prevent blunders.
+    4. Applies blunder probability & tactical sanity check.
     """
     if board.is_game_over() or len(list(board.legal_moves)) == 0:
         return None, 0.0, [], False
 
-    # 1. Immediate forced checkmate check (0 simulations needed!)
-    mate_move = find_immediate_mate_in_1(board)
-    if mate_move:
-        return mate_move, 1.0, [(mate_move, 1.0, 1.0)], False
+    # 1. Immediate forced checkmate check (if tactics enabled)
+    if use_tactics:
+        mate_move = find_immediate_mate_in_1(board)
+        if mate_move:
+            return mate_move, 1.0, [(mate_move, 1.0, 1.0)], False
 
     # 2. Opening book lookup (play instant theory move if enabled)
     if use_book and board.ply() < 12:
@@ -362,7 +365,7 @@ def get_best_move(
 
     # If depth is given instead of simulations, convert depth proportionally
     if depth is not None:
-        num_simulations = max(40, depth * 40)
+        num_simulations = max(10, depth * 25)
 
     chosen_move, root, debug = choose_move_with_mcts(
         board=board,
@@ -378,8 +381,15 @@ def get_best_move(
     for item in debug["top_moves"]:
         scored_moves.append((item["move"], item["q"], item["prob"]))
 
-    # 3. Tactical sanity check (mate-in-1 prevention)
-    chosen_move = tactical_filter_best_move(board, chosen_move, scored_moves)
+    # 3. Friendly Blunder Injection for Novice / Beginner levels
+    if blunder_prob > 0.0 and len(scored_moves) > 1 and np.random.rand() < blunder_prob:
+        suboptimal_moves = scored_moves[1:min(5, len(scored_moves))]
+        if suboptimal_moves:
+            chosen_move = suboptimal_moves[np.random.randint(len(suboptimal_moves))][0]
+
+    # 4. Tactical sanity check (mate-in-1 prevention) if tactics enabled
+    if use_tactics:
+        chosen_move = tactical_filter_best_move(board, chosen_move, scored_moves)
 
     best_eval = debug["root_value"]
     resigned = (best_eval < resign_threshold) and (root.visit_count > 20)

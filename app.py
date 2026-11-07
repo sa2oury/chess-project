@@ -268,40 +268,48 @@ if selected_color != st.session_state.user_color:
     st.rerun()
 
 DIFFICULTY_PRESETS = {
-    "🥈 Intermediate (Club Player)": {"sims": 75, "temp": 0.1},
-    "🥉 Beginner (Casual)": {"sims": 25, "temp": 0.3},
-    "🥇 Master (Tactical)": {"sims": 140, "temp": 0.0},
-    "⚡ Grandmaster (Max Depth)": {"sims": 240, "temp": 0.0},
+    "🐣 Novice (Very Easy / Learning)": {"sims": 6, "temp": 0.85, "book": False, "tactics": False, "blunder": 0.35, "desc": "Very gentle, misses tactics, makes natural casual mistakes"},
+    "🥉 Beginner (Casual Play)": {"sims": 15, "temp": 0.45, "book": False, "tactics": False, "blunder": 0.18, "desc": "Fun & accessible, occasional inaccuracies, no heavy theory"},
+    "🥈 Intermediate (Club Player)": {"sims": 45, "temp": 0.15, "book": True, "tactics": True, "blunder": 0.0, "desc": "Balanced club strength with standard opening theory"},
+    "🥇 Master (Tactical)": {"sims": 100, "temp": 0.0, "book": True, "tactics": True, "blunder": 0.0, "desc": "Sharp tactical calculation and solid endgame play"},
+    "⚡ Grandmaster (Max Depth)": {"sims": 220, "temp": 0.0, "book": True, "tactics": True, "blunder": 0.0, "desc": "Peak AlphaZero engine depth and tactical precision"},
     "🛠️ Custom Settings": None,
 }
 
 diff_choice = st.sidebar.selectbox(
     "Difficulty Level:",
     options=list(DIFFICULTY_PRESETS.keys()),
-    index=0
+    index=1  # Default to Beginner
 )
 
 if DIFFICULTY_PRESETS[diff_choice] is not None:
-    simulations = DIFFICULTY_PRESETS[diff_choice]["sims"]
-    temperature = DIFFICULTY_PRESETS[diff_choice]["temp"]
-    st.sidebar.caption(f"⚡ MCTS Depth: **{simulations} sims** | Randomness: **{temperature}**")
+    preset = DIFFICULTY_PRESETS[diff_choice]
+    simulations = preset["sims"]
+    temperature = preset["temp"]
+    use_book = preset["book"]
+    use_tactics = preset["tactics"]
+    blunder_prob = preset["blunder"]
+    st.sidebar.caption(f"ℹ️ *{preset['desc']}*")
 else:
     simulations = st.sidebar.slider(
         "MCTS Simulations:",
-        min_value=20,
+        min_value=5,
         max_value=300,
-        value=80,
-        step=20,
-        help="Higher values give stronger tactical play. With ONNX, 80 simulations takes ~0.4s."
+        value=40,
+        step=5,
+        help="Higher values give stronger tactical play. 5-15 is beginner, 50+ is intermediate."
     )
     temperature = st.sidebar.slider(
         "Temperature (Randomness):",
         min_value=0.0,
-        max_value=0.8,
-        value=0.0,
-        step=0.1,
-        help="0.0 plays the best move. >0 introduces variety."
+        max_value=1.0,
+        value=0.1,
+        step=0.05,
+        help="0.0 plays the best move. Higher values introduce human-like variety."
     )
+    use_book = st.sidebar.checkbox("Opening Theory Book", value=True)
+    use_tactics = st.sidebar.checkbox("Tactical Sanity Shield", value=True)
+    blunder_prob = 0.0
 
 st.sidebar.markdown("---")
 col_b1, col_b2 = st.sidebar.columns(2)
@@ -403,6 +411,9 @@ def render_game_arena():
                 num_simulations=simulations,
                 temperature=temperature,
                 transposition_cache=st.session_state.cache,
+                use_book=use_book,
+                use_tactics=use_tactics,
+                blunder_prob=blunder_prob,
             )
             if best_move:
                 board.push(best_move)
@@ -479,6 +490,9 @@ def render_game_arena():
                                 num_simulations=simulations,
                                 temperature=temperature,
                                 transposition_cache=st.session_state.cache,
+                                use_book=use_book,
+                                use_tactics=use_tactics,
+                                blunder_prob=blunder_prob,
                             )
                             st.session_state.last_move_time = time.perf_counter() - t0
                             # Convert best_eval (search_turn perspective) to absolute White perspective
@@ -643,6 +657,9 @@ def render_game_arena():
                                 num_simulations=simulations,
                                 temperature=temperature,
                                 transposition_cache=st.session_state.cache,
+                                use_book=use_book,
+                                use_tactics=use_tactics,
+                                blunder_prob=blunder_prob,
                             )
                             st.session_state.last_move_time = time.perf_counter() - t0
                             eval_white = best_eval if search_turn == chess.WHITE else -best_eval

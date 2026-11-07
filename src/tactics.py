@@ -58,3 +58,4 @@ def tactical_filter_best_move(
                 return move
 
     return chosen_move
+

@@ -1,10 +1,14 @@
 # ♟️ AlphaZero Chess AI Engine
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://chess-project.streamlit.app/)
+
 A deep reinforcement and supervised learning chess engine inspired by DeepMind's **AlphaZero** and **Leela Chess Zero (Lc0)**. Built with PyTorch, ONNX Runtime, `python-chess`, and Streamlit.
 
 ---
 
-## 🚀 Play Live in the Browser (Streamlit App)
+## 🚀 Play Live in the Browser
+
+👉 **Play online right now:** **[https://chess-project.streamlit.app/](https://chess-project.streamlit.app/)**
 
 The project includes an interactive web interface built with **Streamlit** that lets anyone play against the trained neural network directly in their browser.
 
@@ -12,7 +16,7 @@ The project includes an interactive web interface built with **Streamlit** that 
 - **Chess.com Gameplay**: Smooth drag-and-drop & click-to-move piece controls.
 - **Valid Move Dots**: Displays circular hints on empty legal squares and target rings on capture squares.
 - **Web Audio Effects**: Synthesized move clicks, capture thuds, and check alerts.
-- **Difficulty Presets**: Play against 🥉 *Beginner*, 🥈 *Intermediate*, 🥇 *Master*, ⚡ *Grandmaster*, or customize simulations directly.
+- **Difficulty Presets**: Friendly tiers from 🐣 *Novice* (very gentle, casual blunders) and 🥉 *Beginner* (accessible, no heavy theory) to 🥈 *Intermediate*, 🥇 *Master*, and ⚡ *Grandmaster*.
 - **💡 Coach Hints**: One-click advice suggesting the best engine move with evaluation.
 - **📥 PGN Export**: One-click standard PGN download to import your game into Chess.com or Lichess.
 - **Opening Theory Book**: Instant 0ms book moves in the opening (Spanish, Italian, Sicilian, French, Queen's Gambit, etc.).
