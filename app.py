@@ -1,12 +1,41 @@
 import os
+import sys
 import time
+import inspect
+import importlib
 import chess
 import chess.pgn
 import streamlit as st
 
+# Force fresh reload of custom engine modules so Streamlit Cloud hot-reloading never uses stale cached modules in sys.modules
+import src.book
+import src.tactics
+import src.models
+import src.mcts
+
+try:
+    importlib.reload(src.book)
+    importlib.reload(src.tactics)
+    importlib.reload(src.models)
+    importlib.reload(src.mcts)
+except Exception:
+    pass
+
 from src.models import load_model
-from src.mcts import get_best_move
+from src.mcts import get_best_move as _raw_get_best_move
 from src.component import interactive_chessboard
+
+def get_best_move(*args, **kwargs):
+    """
+    Safely invokes get_best_move by dynamically inspecting its accepted keyword arguments.
+    Protects against stale cached module versions in long-running container environments.
+    """
+    sig = inspect.signature(_raw_get_best_move)
+    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+    if has_var_keyword:
+        return _raw_get_best_move(*args, **kwargs)
+    valid_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
+    return _raw_get_best_move(*args, **valid_kwargs)
 
 # =========================================================
 # STREAMLIT CONFIG & CUSTOM CHESS.COM STYLING

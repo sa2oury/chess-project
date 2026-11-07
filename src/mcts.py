@@ -343,6 +343,7 @@ def get_best_move(
     max_book_ply: int = 12,
     use_tactics: bool = True,
     blunder_prob: float = 0.0,
+    **kwargs,
 ) -> tuple[chess.Move | None, float, list, bool]:
     """
     Evaluates board and returns the best move.
