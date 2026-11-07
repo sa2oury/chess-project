@@ -37,7 +37,7 @@ The project includes an interactive web interface built with **Streamlit** that 
    ```bash
    streamlit run app.py
    ```
-   Open `http://localhost:8501` in your browser.
+   Open `(https://chess-project.streamlit.app/)` in your browser.
 
 ---
 
