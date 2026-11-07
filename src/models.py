@@ -266,20 +266,70 @@ class ChessResNet(nn.Module):
 
 
 # =========================================================
+# ONNX RUNTIME ENGINE WRAPPER
+# =========================================================
+class ONNXModel:
+    """
+    High-performance inference engine using ONNX Runtime.
+    Provides 2x-4x speedup over PyTorch on CPU via fused SIMD kernels.
+    """
+    def __init__(self, onnx_path: str, num_threads: int = None):
+        import onnxruntime as ort
+        if not os.path.isfile(onnx_path):
+            raise FileNotFoundError(f"ONNX model file not found: {onnx_path}")
+
+        opts = ort.SessionOptions()
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        if num_threads:
+            opts.intra_op_num_threads = num_threads
+            opts.inter_op_num_threads = 2
+
+        self.session = ort.InferenceSession(onnx_path, opts, providers=["CPUExecutionProvider"])
+        self.input_name = self.session.get_inputs()[0].name
+        self.output_names = [out.name for out in self.session.get_outputs()]
+        self.is_onnx = True
+
+    def __call__(self, x):
+        """
+        Runs inference on either a PyTorch Tensor or NumPy ndarray.
+        Returns (policy_logits, value) as NumPy arrays.
+        """
+        import numpy as np
+        if hasattr(x, "cpu"):
+            x_np = x.detach().cpu().numpy()
+        else:
+            x_np = x
+
+        if x_np.ndim == 3:
+            x_np = np.expand_dims(x_np, 0)
+        if not x_np.flags["C_CONTIGUOUS"]:
+            x_np = np.ascontiguousarray(x_np, dtype=np.float32)
+
+        p, v = self.session.run(self.output_names, {self.input_name: x_np})
+        return p, v
+
+
+# =========================================================
 # UNIVERSAL MODEL LOADER & EXPORTER
 # =========================================================
 def load_model(
     checkpoint_path: str,
     device: str = "cpu",
     model_type: str = "auto"
-) -> nn.Module:
+):
     """
-    Universally loads any checkpoint from the project (v1.2, v1.3, v1.4, blackie)
-    by inspecting parameter signatures and weights.
+    Universally loads any checkpoint from the project:
+      - .onnx files via ONNXModel (Ultra-fast CPU inference)
+      - .pth files (v1.2, v1.3, v1.4, blackie) via PyTorch
     """
     if not os.path.isfile(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found at: {checkpoint_path}")
 
+    # 1. Fast ONNX model loading
+    if checkpoint_path.endswith(".onnx"):
+        return ONNXModel(checkpoint_path)
+
+    # 2. PyTorch checkpoint loading
     raw_data = torch.load(checkpoint_path, map_location=device)
     if isinstance(raw_data, dict) and "model_state_dict" in raw_data:
         state_dict = raw_data["model_state_dict"]
@@ -314,6 +364,41 @@ def load_model(
     model.to(device)
     model.eval()
     return model
+
+
+def export_to_onnx(
+    model_or_checkpoint,
+    output_path: str = "models/chess_v1.4.onnx",
+    device: str = "cpu"
+) -> str:
+    """Exports any PyTorch model to a single, standalone optimized ONNX model file."""
+    if isinstance(model_or_checkpoint, str):
+        model = load_model(model_or_checkpoint, device=device)
+    else:
+        model = model_or_checkpoint
+
+    model.eval()
+    dummy_input = torch.randn(1, 12, 8, 8, dtype=torch.float32, device=device)
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+
+    torch.onnx.export(
+        model,
+        dummy_input,
+        output_path,
+        export_params=True,
+        opset_version=17,
+        do_constant_folding=True,
+        input_names=["board_input"],
+        output_names=["policy_logits", "value"],
+        dynamic_axes={
+            "board_input": {0: "batch_size"},
+            "policy_logits": {0: "batch_size"},
+            "value": {0: "batch_size"}
+        },
+        dynamo=False
+    )
+    print(f"Exported standalone ONNX model to {output_path} ({os.path.getsize(output_path) / 1e6:.2f} MB)")
+    return output_path
 
 
 def export_lightweight_model(

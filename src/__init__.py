@@ -3,7 +3,14 @@ Chess AI Core Package
 AlphaZero-inspired Deep Neural Network & MCTS Chess Engine
 """
 
-from .models import AlphaZeroResNet, AlphaZeroSEResNet, ChessResNet, load_model
+from .models import (
+    AlphaZeroResNet,
+    AlphaZeroSEResNet,
+    ChessResNet,
+    ONNXModel,
+    load_model,
+    export_to_onnx,
+)
 from .encoding import (
     board_to_tensor_legacy,
     board_to_tensor_v2,

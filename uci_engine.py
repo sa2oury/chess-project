@@ -16,7 +16,9 @@ from src.mcts import get_best_move
 
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    default_model_path = "models/chess_v1.4_deploy.pth"
+    default_model_path = "models/chess_v1.4.onnx"
+    if not os.path.exists(default_model_path):
+        default_model_path = "models/chess_v1.4_deploy.pth"
     if not os.path.exists(default_model_path):
         default_model_path = "ver1.4/chess ver1.4.pth"
 

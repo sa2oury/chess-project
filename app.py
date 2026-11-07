@@ -51,8 +51,9 @@ st.markdown("""
 # =========================================================
 @st.cache_resource(show_spinner="Loading AlphaZero Neural Network...")
 def get_cached_model():
-    # Priority: lightweight deployment model -> full checkpoint
+    # Priority: Ultra-fast ONNX model -> Lightweight PyTorch -> full checkpoint
     candidate_paths = [
+        "models/chess_v1.4.onnx",
         "models/chess_v1.4_deploy.pth",
         "ver1.4/chess ver1.4.pth",
         "ver1.3/chess ver1.3.pth",

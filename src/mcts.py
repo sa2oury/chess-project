@@ -108,12 +108,19 @@ def expand_node(
         policy_logits_np, value = transposition_cache[fen_key]
     else:
         x_np, is_black = prepare_model_input(board, mode="legacy")
-        x = torch.from_numpy(x_np).unsqueeze(0).to(device)
 
-        with torch.no_grad():
-            policy_logits, value_tensor = model(x)
-            policy_logits_np = policy_logits[0].cpu().numpy()
-            value = float(value_tensor.item())
+        # Fast ONNX pathway (Zero tensor overhead, direct NumPy)
+        if getattr(model, "is_onnx", False):
+            x_4d = np.ascontiguousarray(x_np[np.newaxis, ...], dtype=np.float32)
+            p_out, v_out = model(x_4d)
+            policy_logits_np = p_out[0]
+            value = float(v_out.item() if hasattr(v_out, "item") else v_out[0])
+        else:
+            x = torch.from_numpy(x_np).unsqueeze(0).to(device)
+            with torch.no_grad():
+                policy_logits, value_tensor = model(x)
+                policy_logits_np = policy_logits[0].cpu().numpy()
+                value = float(value_tensor.item())
 
         if transposition_cache is not None and len(transposition_cache) < 50000:
             transposition_cache[fen_key] = (policy_logits_np, value)
