@@ -5,6 +5,8 @@ import torch.nn.functional as F
 import chess
 
 from .encoding import prepare_model_input, mirror_move_if_needed, move_to_index
+from .book import get_opening_move
+from .tactics import tactical_filter_best_move, find_immediate_mate_in_1
 
 
 # =========================================================
@@ -335,17 +337,28 @@ def get_best_move(
     resign_threshold: float = -0.95,
     temperature: float = 0.0,
     transposition_cache: dict = None,
+    use_book: bool = True,
 ) -> tuple[chess.Move | None, float, list, bool]:
     """
     Evaluates board and returns the best move.
-    Directly satisfies the interface expected by `play_against_model()` and Streamlit!
-
-    Returns:
-      (best_move, best_eval, scored_moves, resigned)
-      where scored_moves is a list of (move, score/q_value, prob)
+    1. Checks for immediate forced mate-in-1 (0 ms).
+    2. Checks opening book for theory moves (0 ms).
+    3. Runs high-speed MCTS search.
+    4. Applies tactical sanity check to prevent blunders.
     """
     if board.is_game_over() or len(list(board.legal_moves)) == 0:
         return None, 0.0, [], False
+
+    # 1. Immediate forced checkmate check (0 simulations needed!)
+    mate_move = find_immediate_mate_in_1(board)
+    if mate_move:
+        return mate_move, 1.0, [(mate_move, 1.0, 1.0)], False
+
+    # 2. Opening book lookup (play instant theory move if enabled)
+    if use_book and board.ply() < 12:
+        book_move = get_opening_move(board)
+        if book_move:
+            return book_move, 0.05, [(book_move, 0.05, 1.0)], False
 
     # If depth is given instead of simulations, convert depth proportionally
     if depth is not None:
@@ -364,6 +377,9 @@ def get_best_move(
     scored_moves = []
     for item in debug["top_moves"]:
         scored_moves.append((item["move"], item["q"], item["prob"]))
+
+    # 3. Tactical sanity check (mate-in-1 prevention)
+    chosen_move = tactical_filter_best_move(board, chosen_move, scored_moves)
 
     best_eval = debug["root_value"]
     resigned = (best_eval < resign_threshold) and (root.visit_count > 20)

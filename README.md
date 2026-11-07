@@ -12,6 +12,11 @@ The project includes an interactive web interface built with **Streamlit** that 
 - **Chess.com Gameplay**: Smooth drag-and-drop & click-to-move piece controls.
 - **Valid Move Dots**: Displays circular hints on empty legal squares and target rings on capture squares.
 - **Web Audio Effects**: Synthesized move clicks, capture thuds, and check alerts.
+- **Difficulty Presets**: Play against 🥉 *Beginner*, 🥈 *Intermediate*, 🥇 *Master*, ⚡ *Grandmaster*, or customize simulations directly.
+- **💡 Coach Hints**: One-click advice suggesting the best engine move with evaluation.
+- **📥 PGN Export**: One-click standard PGN download to import your game into Chess.com or Lichess.
+- **Opening Theory Book**: Instant 0ms book moves in the opening (Spanish, Italian, Sicilian, French, Queen's Gambit, etc.).
+- **Tactical Sanity Filter**: Instant forced mate-in-1 detector and blunder-prevention shield.
 - **Engine Analytics**: Real-time evaluation bar, win probability gauge, candidate move breakdown, and material difference tracker.
 - **High-Speed Inference**: Powered by an **ONNX Runtime SIMD engine**, searching 80 MCTS simulations in **<0.45 seconds** on CPU.
 

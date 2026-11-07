@@ -1,6 +1,7 @@
 import os
 import time
 import chess
+import chess.pgn
 import streamlit as st
 
 from src.models import load_model
@@ -164,6 +165,10 @@ if "last_move_time" not in st.session_state:
     st.session_state.last_move_time = 0.0
 if "last_processed_move" not in st.session_state:
     st.session_state.last_processed_move = None
+if "hint" not in st.session_state:
+    st.session_state.hint = None
+if "resigned" not in st.session_state:
+    st.session_state.resigned = False
 
 
 # =========================================================
@@ -258,25 +263,45 @@ if selected_color != st.session_state.user_color:
     st.session_state.eval_white = 0.05
     st.session_state.top_moves = []
     st.session_state.last_processed_move = None
+    st.session_state.hint = None
+    st.session_state.resigned = False
     st.rerun()
 
-simulations = st.sidebar.slider(
-    "MCTS Simulations:",
-    min_value=20,
-    max_value=300,
-    value=80,
-    step=20,
-    help="Higher values give stronger tactical play. With ONNX, 80 simulations takes ~0.4s."
+DIFFICULTY_PRESETS = {
+    "🥈 Intermediate (Club Player)": {"sims": 75, "temp": 0.1},
+    "🥉 Beginner (Casual)": {"sims": 25, "temp": 0.3},
+    "🥇 Master (Tactical)": {"sims": 140, "temp": 0.0},
+    "⚡ Grandmaster (Max Depth)": {"sims": 240, "temp": 0.0},
+    "🛠️ Custom Settings": None,
+}
+
+diff_choice = st.sidebar.selectbox(
+    "Difficulty Level:",
+    options=list(DIFFICULTY_PRESETS.keys()),
+    index=0
 )
 
-temperature = st.sidebar.slider(
-    "Temperature (Randomness):",
-    min_value=0.0,
-    max_value=0.8,
-    value=0.0,
-    step=0.1,
-    help="0.0 plays the best move. >0 introduces variety."
-)
+if DIFFICULTY_PRESETS[diff_choice] is not None:
+    simulations = DIFFICULTY_PRESETS[diff_choice]["sims"]
+    temperature = DIFFICULTY_PRESETS[diff_choice]["temp"]
+    st.sidebar.caption(f"⚡ MCTS Depth: **{simulations} sims** | Randomness: **{temperature}**")
+else:
+    simulations = st.sidebar.slider(
+        "MCTS Simulations:",
+        min_value=20,
+        max_value=300,
+        value=80,
+        step=20,
+        help="Higher values give stronger tactical play. With ONNX, 80 simulations takes ~0.4s."
+    )
+    temperature = st.sidebar.slider(
+        "Temperature (Randomness):",
+        min_value=0.0,
+        max_value=0.8,
+        value=0.0,
+        step=0.1,
+        help="0.0 plays the best move. >0 introduces variety."
+    )
 
 st.sidebar.markdown("---")
 col_b1, col_b2 = st.sidebar.columns(2)
@@ -287,6 +312,8 @@ with col_b1:
         st.session_state.eval_white = 0.05
         st.session_state.top_moves = []
         st.session_state.last_processed_move = None
+        st.session_state.hint = None
+        st.session_state.resigned = False
         st.session_state.cache.clear()
         st.rerun()
 
@@ -301,8 +328,36 @@ with col_b2:
             st.session_state.board.pop()
             st.session_state.move_history.pop()
         st.session_state.last_processed_move = None
+        st.session_state.hint = None
+        st.session_state.resigned = False
         st.session_state.eval_white = 0.05 if len(st.session_state.move_history) == 0 else st.session_state.eval_white
         st.rerun()
+
+col_act1, col_act2 = st.sidebar.columns(2)
+with col_act1:
+    if st.button("💡 Get Hint", use_container_width=True):
+        if not st.session_state.board.is_game_over(claim_draw=True) and not st.session_state.resigned:
+            with st.spinner("AlphaZero finding best move..."):
+                h_move, h_eval, _, _ = get_best_move(
+                    board=st.session_state.board,
+                    model=model,
+                    device="cpu",
+                    num_simulations=min(simulations, 60),
+                    temperature=0.0,
+                    transposition_cache=st.session_state.cache
+                )
+                if h_move:
+                    san_m = st.session_state.board.san(h_move)
+                    st.session_state.hint = f"Recommended: **{san_m}** (`{h_move.uci()}`)"
+            st.rerun()
+
+with col_act2:
+    if st.button("🏳️ Resign", use_container_width=True):
+        if not st.session_state.board.is_game_over(claim_draw=True) and not st.session_state.resigned:
+            st.session_state.resigned = True
+            st.session_state.eval_white = -1.0 if st.session_state.user_color == "White" else 1.0
+            st.session_state.hint = None
+            st.rerun()
 
 with st.sidebar.expander("Custom FEN Setup"):
     fen_input = st.text_input("Paste FEN", value=st.session_state.board.fen())
@@ -311,6 +366,8 @@ with st.sidebar.expander("Custom FEN Setup"):
             st.session_state.board = chess.Board(fen_input)
             st.session_state.move_history = []
             st.session_state.last_processed_move = None
+            st.session_state.hint = None
+            st.session_state.resigned = False
             st.session_state.eval_white = 0.0
             st.success("Board loaded from FEN!")
             st.rerun()
@@ -333,7 +390,7 @@ def render_game_arena():
     board = st.session_state.board
     user_is_white = (st.session_state.user_color == "White")
     is_human_turn = (board.turn == chess.WHITE and user_is_white) or (board.turn == chess.BLACK and not user_is_white)
-    game_over = board.is_game_over(claim_draw=True)
+    game_over = board.is_game_over(claim_draw=True) or st.session_state.resigned
     mat = get_material_info(board)
 
     # If user selected Black and game just started: AI plays White move 1 immediately
@@ -407,6 +464,7 @@ def render_game_arena():
                     mv = chess.Move.from_uci(incoming_uci)
                     if mv in board.legal_moves:
                         st.session_state.last_processed_move = incoming_uci
+                        st.session_state.hint = None
                         board.push(mv)
                         st.session_state.move_history.append(mv)
 
@@ -471,7 +529,10 @@ def render_game_arena():
         st.markdown("</div>", unsafe_allow_html=True)
 
         # Game Over Banner
-        if game_over:
+        if st.session_state.resigned:
+            winner = "AlphaZero AI"
+            st.warning(f"🏳️ Game Over: You resigned. **{winner} wins!**")
+        elif game_over:
             outcome = board.outcome(claim_draw=True)
             res = board.result(claim_draw=True)
             if outcome and outcome.winner is not None:
@@ -479,6 +540,10 @@ def render_game_arena():
                 st.success(f"🏆 Game Over: **{winner} won by checkmate!** ({res})")
             else:
                 st.info(f"🤝 Game Over: **Draw ({res})**")
+
+        # Coach Hint Banner
+        if st.session_state.hint and not game_over and is_human_turn:
+            st.info(f"💡 **Coach Advice:** {st.session_state.hint}")
 
         # Move History Table (Chess.com Style)
         st.subheader("📜 Move History")
@@ -504,6 +569,32 @@ def render_game_arena():
                 </div>
                 """
             st.markdown(table_html + "</div>", unsafe_allow_html=True)
+
+            # Generate and download standard PGN
+            pgn_game = chess.pgn.Game()
+            pgn_game.headers["Event"] = "AlphaZero Exhibition"
+            pgn_game.headers["Site"] = "Streamlit Live Arena"
+            pgn_game.headers["Date"] = time.strftime("%Y.%m.%d")
+            pgn_game.headers["White"] = "Human" if user_is_white else "AlphaZero AI"
+            pgn_game.headers["Black"] = "AlphaZero AI" if user_is_white else "Human"
+            if st.session_state.resigned:
+                pgn_game.headers["Result"] = "0-1" if user_is_white else "1-0"
+            elif game_over:
+                pgn_game.headers["Result"] = board.result(claim_draw=True)
+            else:
+                pgn_game.headers["Result"] = "*"
+
+            node = pgn_game
+            for mv in st.session_state.move_history:
+                node = node.add_variation(mv)
+
+            st.download_button(
+                label="📥 Download Game PGN",
+                data=str(pgn_game),
+                file_name=f"alphazero_{time.strftime('%Y%m%d_%H%M%S')}.pgn",
+                mime="application/x-chess-pgn",
+                use_container_width=True
+            )
         else:
             st.caption("No moves played yet. Click a piece to begin.")
 
@@ -538,6 +629,7 @@ def render_game_arena():
 
                     if parsed and parsed in board.legal_moves:
                         st.session_state.last_processed_move = parsed.uci()
+                        st.session_state.hint = None
                         board.push(parsed)
                         st.session_state.move_history.append(parsed)
 

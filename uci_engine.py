@@ -111,9 +111,45 @@ def main():
                             log(f"bestmove {legal[0].uci()}")
                         continue
 
-                # Parse search limits if given
+                # Parse dynamic time limits if given (wtime, btime, winc, binc, movetime, nodes, depth)
                 search_sims = simulations
-                if "depth" in parts:
+                my_time = None
+                my_inc = 0
+
+                if board.turn == chess.WHITE:
+                    if "wtime" in parts:
+                        idx = parts.index("wtime")
+                        if idx + 1 < len(parts):
+                            my_time = max(10, int(parts[idx + 1]))
+                    if "winc" in parts:
+                        idx = parts.index("winc")
+                        if idx + 1 < len(parts):
+                            my_inc = int(parts[idx + 1])
+                else:
+                    if "btime" in parts:
+                        idx = parts.index("btime")
+                        if idx + 1 < len(parts):
+                            my_time = max(10, int(parts[idx + 1]))
+                    if "binc" in parts:
+                        idx = parts.index("binc")
+                        if idx + 1 < len(parts):
+                            my_inc = int(parts[idx + 1])
+
+                if "movetime" in parts:
+                    idx = parts.index("movetime")
+                    if idx + 1 < len(parts):
+                        mtime_ms = int(parts[idx + 1])
+                        search_sims = max(20, min(1500, int((mtime_ms / 1000.0) * 180)))
+                elif my_time is not None:
+                    # Dynamically scale MCTS depth: ~1/30th of remaining clock + 75% increment
+                    alloc_sec = (my_time / 1000.0) / 30.0 + (my_inc / 1000.0) * 0.75
+                    alloc_sec = max(0.08, min(12.0, alloc_sec))
+                    search_sims = max(20, min(1500, int(alloc_sec * 180)))
+                elif "nodes" in parts:
+                    idx = parts.index("nodes")
+                    if idx + 1 < len(parts):
+                        search_sims = max(10, int(parts[idx + 1]))
+                elif "depth" in parts:
                     d_idx = parts.index("depth")
                     if d_idx + 1 < len(parts):
                         search_sims = max(30, int(parts[d_idx + 1]) * 30)
@@ -132,11 +168,16 @@ def main():
                     if legal:
                         best_move = legal[0]
 
-                # info score in centipawns
+                # Centipawn score conversion (-1.0 to +1.0 mapped to ~ -300 to +300 cp)
                 cp_score = int(best_eval * 300)
-                if best_move:
-                    log(f"info depth 10 score cp {cp_score} pv {best_move.uci()}")
-                    log(f"bestmove {best_move.uci()}")
+                pv_str = best_move.uci() if best_move else "0000"
+                log(f"info depth 10 score cp {cp_score} nodes {search_sims} pv {pv_str}")
+                log(f"bestmove {pv_str}")
+
+            elif cmd == "stop":
+                legal = list(board.legal_moves)
+                if legal:
+                    log(f"bestmove {legal[0].uci()}")
                 else:
                     log("bestmove 0000")
 

@@ -24,6 +24,8 @@ from src.encoding import (
     prepare_model_input,
 )
 from src.mcts import get_best_move, choose_move_with_mcts
+from src.book import get_opening_move
+from src.tactics import find_immediate_mate_in_1
 
 
 def test_move_encoding():
@@ -109,8 +111,27 @@ def test_mcts_search():
     print(f"  ✓ MCTS chose move {san} ({best_move.uci()}) with evaluation {best_eval:+.3f}")
 
 
+def test_opening_book():
+    print("[5/7] Testing Opening Book & Theory Repertoire...")
+    board = chess.Board()
+    book_move = get_opening_move(board)
+    assert book_move is not None, "Opening book should provide a move for startpos"
+    assert book_move in board.legal_moves, f"Illegal opening book move: {book_move}"
+    print(f"  ✓ Opening book returned theory move: {board.san(book_move)} ({book_move.uci()})")
+
+
+def test_tactical_mate_in_1():
+    print("[6/7] Testing Tactical Forced Mate-in-1 Detector...")
+    # Scholar's mate test position: Qxf7# is mate
+    board = chess.Board("r1bqkb1r/pppp1ppp/2n5/4p3/2B1n3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 0 5")
+    mate_move = find_immediate_mate_in_1(board)
+    assert mate_move is not None, "Mate in 1 should be detected"
+    assert mate_move == chess.Move.from_uci("f3f7"), f"Expected Qxf7#, got {mate_move}"
+    print("  ✓ Forced Mate-in-1 found instantly (0 simulations): Qxf7#")
+
+
 def test_gameplay_simulation():
-    print("[5/5] Testing Multi-Move Game Simulation...")
+    print("[7/7] Testing Multi-Move Game Simulation...")
     model = load_model("models/chess_v1.4.onnx")
     board = chess.Board()
 
@@ -139,6 +160,8 @@ if __name__ == "__main__":
         test_board_tensors()
         test_onnx_model()
         test_mcts_search()
+        test_opening_book()
+        test_tactical_mate_in_1()
         test_gameplay_simulation()
         print("=" * 60)
         print("ALL TESTS PASSED SUCCESSFULLY! (100% Operational)")
@@ -149,3 +172,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n[ERROR] Unexpected error: {e}")
         sys.exit(1)
+
