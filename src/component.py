@@ -28,3 +28,4 @@ def interactive_chessboard(
         key=key,
         default=None
     )
+
