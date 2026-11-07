@@ -1,0 +1,31 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Large training datasets (held locally)
+archive/
+pro moves/
+*.npz
+
+# Heavy training checkpoints with optimizer states (>100MB, exceeds GitHub limit)
+ver1.2/
+ver1.3/
+ver1.4/
+blackie/
+*.pth
+!models/chess_v1.4_deploy.pth
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
